@@ -1,0 +1,47 @@
+#!/bin/sh
+
+HTTP=$(which http)
+if [ -z "$HTTP" ]; then
+  HTTP="curl"
+fi
+query=$1
+
+date_to=$(date -u "+%s")
+date_from=$(($date_to - 36000)) # now - 15min
+
+date_from_format=$(date -u -d "@$date_from" "+%FT%T%:z")
+date_to_format=$(date -u -d "@$date_to" "+%FT%T%:z")
+es_index=$(date -u -d "@$date_to" "+logstash-%Y.%m.%d")
+fetched=0
+page=100
+total=100
+
+echo "From: $date_from_format, To: $date_to_format" 1>&2
+
+echo "{\"from\": 0,
+  \"query\": {
+    \"filtered\": {
+      \"filter\": {
+        \"range\": {
+          \"@timestamp\": {
+            \"from\": \"$date_from_format\",
+            \"to\": \"$date_to_format\"
+          }
+        }
+      },
+      \"query\": {
+        \"query_string\": {
+          \"query\": \"$query\",
+          \"default_field\": \"_all\",
+          \"default_operator\": \"AND\"
+        }
+      }
+    }
+  },
+  \"sort\": {
+    \"@timestamp\": {
+      \"order\": \"asc\"
+    }
+  },
+  \"size\": 10000
+}" | $HTTP localhost:9200/${es_index}/_search?pretty
