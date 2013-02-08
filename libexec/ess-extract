@@ -1,0 +1,42 @@
+#!/usr/bin/env python
+
+import sys
+import json
+import argparse
+
+parser = argparse.ArgumentParser(description='Extract fields from Elasticsearch search result.')
+parser.add_argument('fields', metavar='FIELD', type=str, nargs='+',
+                    help='Field path to extract')
+parser.add_argument('-q', '--quiet', dest='quiet', action='store_const', const=True,
+                    default=False, help='Be quiet')
+parser.add_argument('-v', '--verbose', dest='verbose', action='store_const', const=True,
+                    default=False, help='Be verbose')
+parser.add_argument('-d', '--debug', dest='debug', action='store_const', const=True,
+                    default=False, help='Activate debug')
+args = parser.parse_args()
+
+if args.debug:
+    print >> sys.stderr, "Parsed arguments: ", args
+
+def extract_field(json_elt, fields, default_field=None):
+    if json_elt.has_key(fields[0]):
+        field_value = json_elt[fields[0]]
+        fields = fields[1:]
+    elif default_field is not None and json_elt.has_key(default_field):
+        field_value = json_elt[default_field]
+    else:
+        return ""
+    if len(fields) >= 1:
+        return extract_field(field_value, fields)
+    else:
+        return field_value
+
+print_field_name = ((len(args.fields) > 1) and (not args.quiet)) or args.verbose
+res = json.load(sys.stdin)
+for hit in res["hits"]["hits"]:
+    for field in args.fields:
+        field_value = extract_field(hit, field.split('/'), "_source")
+        if print_field_name:
+            print "%s: %s" % (field, field_value)
+        else:
+            print "%s" % (field_value,)

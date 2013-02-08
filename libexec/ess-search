@@ -1,47 +1,86 @@
-#!/bin/sh
+#!/usr/bin/env python
 
-HTTP=$(which http)
-if [ -z "$HTTP" ]; then
-  HTTP="curl"
-fi
-query=$1
+import os
+import sys
+from datetime import timedelta, datetime
+import json
+import requests
+import argparse
 
-date_to=$(date -u "+%s")
-date_from=$(($date_to - 36000)) # now - 15min
+ES_DATE_FORMAT = '%Y-%m-%dT%H:%M:%S'
+default_date_to = datetime.utcnow()
+default_date_to_format = default_date_to.strftime(ES_DATE_FORMAT)
+default_date_from = default_date_to - timedelta(hours = 1)
+default_date_from_format = default_date_from.strftime(ES_DATE_FORMAT)
 
-date_from_format=$(date -u -d "@$date_from" "+%FT%T%:z")
-date_to_format=$(date -u -d "@$date_to" "+%FT%T%:z")
-es_index=$(date -u -d "@$date_to" "+logstash-%Y.%m.%d")
-fetched=0
-page=100
-total=100
+parser = argparse.ArgumentParser(description='Search into Logstash indexes.')
+parser.add_argument('query', metavar='QUERY', type=str, nargs='+',
+                    help='Lucene search query')
+parser.add_argument('-s', '--size', dest='size', default=100,
+                    help='Maximum mumber of results to fetch')
+parser.add_argument('-u', '--base-url', dest='es_base_url', default='http://localhost:9200',
+                    help='Base URL of Elasticsearch')
+parser.add_argument('-f', '--from', dest='date_from_format', default=default_date_from_format,
+                    help='Date from which to search (e.g. 2013-02-08T16:15:08)')
+parser.add_argument('-t', '--to', dest='date_to_format', default=default_date_to_format,
+                    help='Date until which to search (e.g. 2013-02-08T16:15:08)')
+parser.add_argument('-d', '--debug', dest='debug', action='store_const', const=True,
+                    default=False, help='Activate debug')
+args = parser.parse_args()
 
-echo "From: $date_from_format, To: $date_to_format" 1>&2
+if args.debug:
+    print >> sys.stderr, "Parsed arguments: ", args
 
-echo "{\"from\": 0,
-  \"query\": {
-    \"filtered\": {
-      \"filter\": {
-        \"range\": {
-          \"@timestamp\": {
-            \"from\": \"$date_from_format\",
-            \"to\": \"$date_to_format\"
-          }
+date_to = datetime.strptime(args.date_to_format, ES_DATE_FORMAT)
+es_index = date_to.strftime('logstash-%Y.%m.%d')
+
+es_request = {
+    "from": 0,
+    "query": {
+        "filtered": {
+            "filter": {
+                "range": {
+                    "@timestamp": {
+                        "from": args.date_from_format,
+                        "to": args.date_to_format
+                    }
+                }
+                },
+            "query": {
+                "query_string": {
+                    "query": " ".join(args.query),
+                    "default_field": "_all",
+                    "default_operator": "OR"
+                }
+            }
         }
-      },
-      \"query\": {
-        \"query_string\": {
-          \"query\": \"$query\",
-          \"default_field\": \"_all\",
-          \"default_operator\": \"AND\"
+        },
+    "sort": {
+        "@timestamp": {
+            "order": "asc"
         }
-      }
-    }
-  },
-  \"sort\": {
-    \"@timestamp\": {
-      \"order\": \"asc\"
-    }
-  },
-  \"size\": 10000
-}" | $HTTP localhost:9200/${es_index}/_search?pretty
+        },
+    "size": args.size
+}
+
+if sys.stdout.isatty():
+    print >> sys.stderr, "Searching from %s to %s" % (args.date_from_format,
+                                                      args.date_to_format)
+
+r = requests.post('%s/%s/_search?pretty' % (args.es_base_url, es_index, ),
+                  data=json.dumps(es_request))
+
+if sys.stdout.isatty():
+    from pygments import highlight
+    from pygments.lexers import JsonLexer
+    from pygments.formatters.terminal import TerminalFormatter
+    from pygments.formatters.terminal256 import Terminal256Formatter
+
+    if '256color' in os.environ.get('TERM', ''):
+        fmt_class = Terminal256Formatter
+    else:
+        fmt_class = TerminalFormatter
+    print highlight(json.dumps(r.json, sort_keys=True, indent=4, separators=(',', ': ')),
+                    JsonLexer(), fmt_class(style='monokai')).strip()
+else:
+    print r.text
