@@ -1,0 +1,80 @@
+#!/usr/bin/env python
+
+import sys
+import json
+import argparse
+
+parser = argparse.ArgumentParser(description='Extract fields from Elasticsearch search result.')
+parser.add_argument('fields', metavar='FIELD', type=str, nargs='+',
+                    help='Field path to extract')
+parser.add_argument('-s', '--str-stats', dest='str_stats',
+                    action='store_const', const=True,
+                    default=False, help='Force string stats')
+parser.add_argument('-d', '--debug', dest='debug', action='store_const', const=True,
+                    default=False, help='Activate debug')
+args = parser.parse_args()
+
+if args.debug:
+    print >> sys.stderr, "Parsed arguments: ", args
+
+def extract_field(json_elt, fields, default_field=None):
+    if json_elt.has_key(fields[0]):
+        field_value = json_elt[fields[0]]
+        fields = fields[1:]
+    elif default_field is not None and json_elt.has_key(default_field):
+        field_value = json_elt[default_field]
+    else:
+        return ""
+    if len(fields) >= 1:
+        return extract_field(field_value, fields)
+    else:
+        return field_value
+
+def compute_int_stats(values):
+    nb_vals = len(values)
+    if nb_vals == 0:
+        return None
+    else:
+        values.sort()
+        min_val = values[0]
+        max_val = values[nb_vals - 1]
+        mean_val = sum(values) / float(nb_vals)
+        perc90_val = values[int(0.9 * nb_vals)]
+        perc95_val = values[int(0.95 * nb_vals)]
+        perc99_val = values[int(0.99 * nb_vals)]
+        return dict(nb_vals= nb_vals, min=min_val, max=max_val, mean=mean_val,
+                    perc90=perc90_val, perc95=perc95_val, perc99=perc99_val)
+
+def compute_str_stats(values):
+    stats = dict()
+    for val in values:
+        if val in stats:
+            stats[val] += 1
+        else:
+            stats[val] = 1
+    return stats
+
+def compute_stats(field_values, force_str_stats=False):
+    filtered_values = [val for val in field_values if val is not None and val is not ""]
+    if not force_str_stats and all(isinstance(val, (int, long)) for val in filtered_values):
+        return compute_int_stats(filtered_values)
+    else:
+        return compute_str_stats(filtered_values)
+
+def print_field_stats(field, field_stats):
+    print "%s:" % (field,)
+    for stat in field_stats:
+        print "\t%s\t= %d" % (stat, field_stats[stat])
+
+fields_stats = dict()
+res = json.load(sys.stdin)
+for hit in res["hits"]["hits"]:
+    for field in args.fields:
+        field_value = extract_field(hit, field.split('/'), "_source")
+        if field in fields_stats:
+            fields_stats[field] += [field_value]
+        else:
+            fields_stats[field] = [field_value]
+
+for field in fields_stats:
+    print_field_stats(field, compute_stats(fields_stats[field], args.str_stats))
