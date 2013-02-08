@@ -63,8 +63,11 @@ def compute_stats(field_values, force_str_stats=False):
 
 def print_field_stats(field, field_stats):
     print "%s:" % (field,)
-    for stat in field_stats:
-        print "\t%s\t= %d" % (stat, field_stats[stat])
+    if field_stats is None:
+        print "\tNo values"
+    else:
+        for stat in field_stats:
+            print "\t%s\t= %d" % (stat, field_stats[stat])
 
 fields_stats = dict()
 res = json.load(sys.stdin)

@@ -25,7 +25,7 @@ def extract_field(json_elt, fields, default_field=None):
     elif default_field is not None and json_elt.has_key(default_field):
         field_value = json_elt[default_field]
     else:
-        return ""
+        return None
     if len(fields) >= 1:
         return extract_field(field_value, fields)
     else:
@@ -36,7 +36,8 @@ res = json.load(sys.stdin)
 for hit in res["hits"]["hits"]:
     for field in args.fields:
         field_value = extract_field(hit, field.split('/'), "_source")
-        if print_field_name:
-            print "%s: %s" % (field, field_value)
-        else:
-            print "%s" % (field_value,)
+        if field_value:
+            if print_field_name:
+                print "%s: %s" % (field, field_value)
+            else:
+                print "%s" % (field_value,)
