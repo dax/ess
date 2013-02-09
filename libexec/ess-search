@@ -10,7 +10,7 @@ import argparse
 ES_DATE_FORMAT = '%Y-%m-%dT%H:%M:%S'
 default_date_to = datetime.utcnow()
 default_date_to_format = default_date_to.strftime(ES_DATE_FORMAT)
-default_date_from = default_date_to - timedelta(hours = 1)
+default_date_from = default_date_to - timedelta(days = 30)
 default_date_from_format = default_date_from.strftime(ES_DATE_FORMAT)
 
 parser = argparse.ArgumentParser(description='Search into Logstash indexes.')
