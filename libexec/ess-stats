@@ -47,12 +47,13 @@ def compute_int_stats(values):
 
 def compute_str_stats(values):
     stats = dict()
+    nb_vals = len(values)
     for val in values:
         if val in stats:
             stats[val] += 1
         else:
             stats[val] = 1
-    return stats
+    return dict(zip(stats.keys(), ["%s\t(%4.1f%%)" % (val, round(val * 100 / float(nb_vals), 2)) for val in stats.values()]))
 
 def compute_stats(field_values, force_str_stats=False):
     filtered_values = [val for val in field_values if val is not None and val is not ""]
@@ -67,7 +68,7 @@ def print_field_stats(field, field_stats):
         print "\tNo values"
     else:
         for stat in field_stats:
-            print "\t%s\t= %d" % (stat, field_stats[stat])
+            print "\t%s\t= %s" % (stat, field_stats[stat])
 
 fields_stats = dict()
 res = json.load(sys.stdin)
