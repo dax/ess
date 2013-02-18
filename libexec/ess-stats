@@ -3,6 +3,8 @@
 import sys
 import json
 import argparse
+import operator
+from collections import OrderedDict
 
 parser = argparse.ArgumentParser(description='Extract fields from Elasticsearch search result.')
 parser.add_argument('fields', metavar='FIELD', type=str, nargs='+',
@@ -49,11 +51,14 @@ def compute_str_stats(values):
     stats = dict()
     nb_vals = len(values)
     for val in values:
-        if val in stats:
-            stats[val] += 1
+        val_str = str(val)
+        if val_str in stats:
+            stats[val_str] += 1
         else:
-            stats[val] = 1
-    return dict(zip(stats.keys(), ["%s\t(%4.1f%%)" % (val, round(val * 100 / float(nb_vals), 2)) for val in stats.values()]))
+            stats[val_str] = 1
+    max_val_length = max([len(str(val)) for val in stats.values()])
+    return OrderedDict([(key, "%s%s(%5.2f%%)" % (val, " " * (max_val_length - len(str(val)) + 1), round(val * 100 / float(nb_vals), 2)))
+                        for key, val in sorted(stats.iteritems(), key=operator.itemgetter(1))])
 
 def compute_stats(field_values, force_str_stats=False):
     filtered_values = [val for val in field_values if val is not None and val is not ""]
@@ -67,8 +72,11 @@ def print_field_stats(field, field_stats):
     if field_stats is None:
         print "\tNo values"
     else:
+        max_key_length = max([len(str(key)) for key in field_stats])
         for stat in field_stats:
-            print "\t%s\t= %s" % (stat, field_stats[stat])
+            sys.stdout.write("\t%s" % (stat,))
+            sys.stdout.write(" " * (max_key_length - len(str(stat)) + 1))
+            print "= %s" % (field_stats[stat],)
 
 fields_stats = dict()
 res = json.load(sys.stdin)
