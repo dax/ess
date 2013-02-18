@@ -7,7 +7,11 @@ import json
 import requests
 import argparse
 from dateutil.rrule import rrule, DAILY
+import hashlib
 
+from requests.models import Response
+
+ESS_TMP_DIR = '/tmp/ess'
 ES_DATE_FORMAT = '%Y-%m-%dT%H:%M:%S'
 default_date_to = datetime.utcnow()
 default_date_to_format = default_date_to.strftime(ES_DATE_FORMAT)
@@ -25,6 +29,8 @@ parser.add_argument('-f', '--from', dest='date_from_format', default=default_dat
                     help='Date from which to search (e.g. 2013-02-08T16:15:08)')
 parser.add_argument('-t', '--to', dest='date_to_format', default=default_date_to_format,
                     help='Date until which to search (e.g. 2013-02-08T16:15:08)')
+parser.add_argument('-c', '--clear-cache', dest='clear_cache', action='store_const',
+                    const=True, default=False, help='Clear cached responses')
 parser.add_argument('-d', '--debug', dest='debug', action='store_const', const=True,
                     default=False, help='Activate debug')
 args = parser.parse_args()
@@ -32,6 +38,9 @@ args = parser.parse_args()
 if args.debug:
     print >> sys.stderr, "Parsed arguments: ", args
 
+clear_cache = args.clear_cache \
+              or (args.date_to_format == default_date_to_format) \
+              or (args.date_from_format == default_date_from_format)
 date_to = datetime.strptime(args.date_to_format, ES_DATE_FORMAT)
 date_from = datetime.strptime(args.date_from_format, ES_DATE_FORMAT)
 es_indexes = ','.join([dt.strftime('logstash-%Y.%m.%d')
@@ -70,8 +79,24 @@ if sys.stdout.isatty():
     print >> sys.stderr, "Searching from %s to %s" % (args.date_from_format,
                                                       args.date_to_format)
 
-r = requests.post('%s/%s/_search?pretty' % (args.es_base_url, es_indexes),
-                  data=json.dumps(es_request))
+es_request_str = json.dumps(es_request)
+if not os.path.exists(ESS_TMP_DIR):
+    os.makedirs(ESS_TMP_DIR)
+cache_filename = hashlib.sha1(es_request_str.encode('utf-8')).hexdigest()
+cache_file_path = os.path.join(ESS_TMP_DIR, cache_filename)
+
+result = None
+if clear_cache and os.path.exists(cache_file_path):
+    os.remove(cache_file_path)
+if os.path.exists(cache_file_path):
+    cache_file = open(cache_file_path)
+    result = Response()
+    result.raw = cache_file
+else:
+    result = requests.post('%s/%s/_search?pretty' % (args.es_base_url, es_indexes),
+                           data=es_request_str)
+    with open(cache_file_path, 'w') as f:
+        f.write(result.text)
 
 if sys.stdout.isatty():
     from pygments import highlight
@@ -83,7 +108,7 @@ if sys.stdout.isatty():
         fmt_class = Terminal256Formatter
     else:
         fmt_class = TerminalFormatter
-    print highlight(json.dumps(r.json, sort_keys=True, indent=4, separators=(',', ': ')),
+    print highlight(json.dumps(result.json, sort_keys=True, indent=4, separators=(',', ': ')),
                     JsonLexer(), fmt_class(style='monokai')).strip()
 else:
-    print r.text
+    print result.text
