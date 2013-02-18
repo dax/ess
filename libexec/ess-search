@@ -6,6 +6,7 @@ from datetime import timedelta, datetime
 import json
 import requests
 import argparse
+from dateutil.rrule import rrule, DAILY
 
 ES_DATE_FORMAT = '%Y-%m-%dT%H:%M:%S'
 default_date_to = datetime.utcnow()
@@ -32,7 +33,9 @@ if args.debug:
     print >> sys.stderr, "Parsed arguments: ", args
 
 date_to = datetime.strptime(args.date_to_format, ES_DATE_FORMAT)
-es_index = date_to.strftime('logstash-%Y.%m.%d')
+date_from = datetime.strptime(args.date_from_format, ES_DATE_FORMAT)
+es_indexes = ','.join([dt.strftime('logstash-%Y.%m.%d')
+                       for dt in rrule(DAILY, dtstart=date_from, until=date_to)])
 
 es_request = {
     "from": 0,
@@ -57,7 +60,7 @@ es_request = {
         },
     "sort": {
         "@timestamp": {
-            "order": "asc"
+            "order": "desc"
         }
         },
     "size": args.size
@@ -67,7 +70,7 @@ if sys.stdout.isatty():
     print >> sys.stderr, "Searching from %s to %s" % (args.date_from_format,
                                                       args.date_to_format)
 
-r = requests.post('%s/%s/_search?pretty' % (args.es_base_url, es_index, ),
+r = requests.post('%s/%s/_search?pretty' % (args.es_base_url, es_indexes),
                   data=json.dumps(es_request))
 
 if sys.stdout.isatty():
